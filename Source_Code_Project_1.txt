@@ -1,0 +1,48 @@
+#KKRvMI
+-----------------------------------------------------------------------------------------------------------------------------------
+# Create an HDFS directory to save the Twitter Data (#KKRvMI)
+1) hdfs dfs -mkdir -p /user/flume/tweets
+-----------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------
+# Run the below command to execute Flume to get the Twitter data(#KKRvMI). The file flume_twitter.conf file is attached.
+2) flume-ng agent --conf-file /etc/flume-ng/conf/flume_twitter.conf --name TwitterAgent --classpath /my-folder/cdh-twitter-example-master/flume-sources/target/flume-sources-1.0-SNAPSHOT.jar
+-----------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------
+# Check the data in the below folder (I took only 1 file for sample)
+3) hdfs dfs -ls /user/flume/tweets
+-----------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------
+# Register the below jar files for Pig JSON Loader as we will get the data in Json format (nested) which supports map
+4.1) Register /my-folder/PigJsonLoader/elephant-bird-hadoop-compat-4.1.jar
+4.2) Register /my-folder/PigJsonLoader/elephant-bird-pig-4.1.jar
+4.3) Register /my-folder/PigJsonLoader/json-simple-1.1.1.jar
+------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------
+# Run the below commands to do load and Analyse the data received. We will find the average rating of the tweets based on the dictionary provided and also the positive_tweets based on the average rating of the tweets. (I have added the word 'toss' with a rating of '2' in the dictionary)
+
+5) load_tweets = LOAD '/user/flume/tweets/' USING com.twitter.elephantbird.pig.load.JsonLoader('-nestedLoad') AS myMap;
+
+6) extract_details = FOREACH load_tweets GENERATE myMap#'id' as id,myMap#'text' as text;
+
+7) tokens = foreach extract_details generate id,text,FLATTEN(TOKENIZE(text)) As word;
+
+8) dictionary = load '/tmp/AFINN.txt' USING PigStorage('\t') AS (word:chararray,rating:int)
+
+9) word_rating = join tokens by LOWER(word) left outer, dictionary by word using 'replicated';
+
+10) describe word_rating;
+
+11) rating = foreach word_rating generate tokens::id as id,tokens::text as text, dictionary::rating as rate;
+
+12) test = filter rating by rate is not null;
+
+13) word_group = group test by (id,text);
+ 
+14) avg_rate = foreach word_group generate group, AVG(test.rate) as tweet_rating;
+
+15) dump avg_rate;
+
+16) positive_tweets = filter avg_rate by tweet_rating >= 0;
+
+17) dump positive_tweets;
+------------------------------------------------------------------------------------------------------------------------------------
